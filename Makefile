@@ -8,13 +8,14 @@ READLINE_DEFINES := -DHAVE_READLINE
 endif
 
 TARGET := loco
+LDLIBS ?= -lm
 
 .PHONY: all test clean
 
 all: $(TARGET)
 
 $(TARGET): loco.c
-	$(CC) $(CFLAGS) $(READLINE_DEFINES) $(READLINE_CFLAGS) $< -o $@ $(READLINE_LIBS)
+	$(CC) $(CFLAGS) $(READLINE_DEFINES) $(READLINE_CFLAGS) $< -o $@ $(READLINE_LIBS) $(LDLIBS)
 
 test: $(TARGET)
 	sh tests/smoke.sh

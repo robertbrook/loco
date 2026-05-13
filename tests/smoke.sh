@@ -44,3 +44,42 @@ LOGO
 for word in print make repeat if ifelse output stop words sum difference product quotient lessp greaterp equalp thing greet; do
     grep -qw "$word" "$tmp_words_output" || { echo "FAIL: '$word' not found in words output"; exit 1; }
 done
+
+# Test: additional non-graphics words
+tmp_extra_output="$(mktemp)"
+tmp_extra_expected="$(mktemp)"
+trap 'rm -f "$tmp_output" "$tmp_expected" "$tmp_words_output" "$tmp_extra_output" "$tmp_extra_expected"' EXIT
+
+cat <<'LOGO' | ./loco > "$tmp_extra_output"
+print abs -5
+print remainder 10 3
+print word "lo "go
+print list "a "b
+print sentence [ a b ] [ c ]
+print first [ x y z ]
+print butfirst [ x y z ]
+print item 2 [ x y z ]
+print count [ x y z ]
+print and 1 0
+print or 1 0
+print not 0
+run [ print "ran ]
+LOGO
+
+cat <<'EXPECTED' > "$tmp_extra_expected"
+5
+1
+logo
+[a b]
+[a b c]
+x
+[y z]
+y
+3
+0
+1
+1
+ran
+EXPECTED
+
+cmp -s "$tmp_extra_expected" "$tmp_extra_output"

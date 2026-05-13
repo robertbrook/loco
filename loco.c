@@ -484,18 +484,18 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
 
     if (!strcmp(t, "date")) {
         time_t now = time(NULL);
-        struct tm tmv;
-        localtime_r(&now, &tmv);
+        struct tm *tmv = localtime(&now);
         char out[32];
-        strftime(out, sizeof(out), "%Y-%m-%d", &tmv);
+        if (!tmv) return v_word("");
+        strftime(out, sizeof(out), "%Y-%m-%d", tmv);
         return v_word(out);
     }
     if (!strcmp(t, "time")) {
         time_t now = time(NULL);
-        struct tm tmv;
-        localtime_r(&now, &tmv);
+        struct tm *tmv = localtime(&now);
         char out[32];
-        strftime(out, sizeof(out), "%H:%M:%S", &tmv);
+        if (!tmv) return v_word("");
+        strftime(out, sizeof(out), "%H:%M:%S", tmv);
         return v_word(out);
     }
 
@@ -1031,8 +1031,8 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             double ticks = to_num(t);
             v_free(&t);
             if (ticks > 0) {
-                useconds_t us = (useconds_t)(ticks * (1000000.0 / 60.0));
-                usleep(us);
+                unsigned int secs = (unsigned int)(ticks / 60.0);
+                if (secs > 0) sleep(secs);
             }
             continue;
         }
@@ -1110,19 +1110,19 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
         }
         if (!strcmp(cmd, "date")) {
             time_t now = time(NULL);
-            struct tm tmv;
-            localtime_r(&now, &tmv);
+            struct tm *tmv = localtime(&now);
             char out[32];
-            strftime(out, sizeof(out), "%Y-%m-%d", &tmv);
+            if (!tmv) out[0] = '\0';
+            else strftime(out, sizeof(out), "%Y-%m-%d", tmv);
             printf("%s\n", out);
             continue;
         }
         if (!strcmp(cmd, "time")) {
             time_t now = time(NULL);
-            struct tm tmv;
-            localtime_r(&now, &tmv);
+            struct tm *tmv = localtime(&now);
             char out[32];
-            strftime(out, sizeof(out), "%H:%M:%S", &tmv);
+            if (!tmv) out[0] = '\0';
+            else strftime(out, sizeof(out), "%H:%M:%S", tmv);
             printf("%s\n", out);
             continue;
         }
