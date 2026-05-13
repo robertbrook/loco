@@ -1,5 +1,6 @@
 CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2
+LDLIBS ?= -lm
 
 TARGET := loco
 
@@ -8,7 +9,7 @@ TARGET := loco
 all: $(TARGET)
 
 $(TARGET): loco.c
-	$(CC) $(CFLAGS) $< -o $@
+	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS)
 
 test: $(TARGET)
 	sh tests/smoke.sh
