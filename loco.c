@@ -85,6 +85,17 @@ static bool str_ieq(const char *a, const char *b) {
     return *a == '\0' && *b == '\0';
 }
 
+static int uniform_random_int(int limit) {
+    if (limit <= 0) return 0;
+    unsigned int lim = (unsigned int)limit;
+    unsigned int max_acceptable = (unsigned int)RAND_MAX - ((unsigned int)RAND_MAX % lim);
+    unsigned int r = 0;
+    do {
+        r = (unsigned int)rand();
+    } while (r >= max_acceptable);
+    return (int)(r % lim);
+}
+
 static Value v_none(void) { return (Value){.type = VAL_NONE, .num = 0, .word = NULL}; }
 static Value v_num(double n) { return (Value){.type = VAL_NUM, .num = n, .word = NULL}; }
 static Value v_word(const char *s) { return (Value){.type = VAL_WORD, .num = 0, .word = dupstr(s)}; }
@@ -513,7 +524,7 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         if (str_ieq(t, "arctan")) out = atan(av) * 180.0 / M_PI;
         if (str_ieq(t, "random")) {
             int limit = (int)av;
-            out = (limit <= 0) ? 0 : (double)(rand() % limit);
+            out = (double)uniform_random_int(limit);
         }
         v_free(&a);
         return v_num(out);
@@ -785,7 +796,7 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
                 for (int i = 0; i < cn; i++) if (str_ieq(items[i], needle)) { out = 1; break; }
                 free_list_elements(items, cn);
             } else {
-                out = strstr(hay, needle) != NULL;
+                out = str_ieq(hay, needle);
             }
             free(needle); free(hay);
         }
