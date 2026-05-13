@@ -422,6 +422,17 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             it->stop = true;
             return true;
         }
+        if (!strcmp(cmd, "words")) {
+            static const char *builtins[] = {
+                "print", "make", "repeat", "if", "ifelse", "output", "stop",
+                "words", "sum", "difference", "product", "quotient",
+                "lessp", "greaterp", "equalp", "thing"
+            };
+            for (Proc *p = it->procs; p; p = p->next) printf("%s ", p->name);
+            for (size_t wi = 0; wi < sizeof(builtins) / sizeof(*builtins); wi++) printf("%s ", builtins[wi]);
+            printf("\n");
+            continue;
+        }
 
         Proc *p = find_proc(it, cmd);
         if (!p) { fprintf(stderr, "error: unknown command '%s'\n", cmd); it->had_error = true; return false; }
