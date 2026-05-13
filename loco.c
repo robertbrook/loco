@@ -244,6 +244,22 @@ static void free_tokens(char **toks, int n) {
     free(toks);
 }
 
+static char *concat_tokens(char **toks, int start, int end) {
+    size_t total = 0;
+    for (int i = start; i < end; i++) total += strlen(toks[i]) + 1;
+    char *buf = (char *)malloc(total + 1);
+    if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
+    size_t pos = 0;
+    for (int i = start; i < end; i++) {
+        if (i > start) buf[pos++] = ' ';
+        size_t slen = strlen(toks[i]);
+        memcpy(buf + pos, toks[i], slen);
+        pos += slen;
+    }
+    buf[pos] = '\0';
+    return buf;
+}
+
 static Value eval_expr(Interp *it, char **toks, int n, int *idx);
 static bool exec_tokens(Interp *it, char **toks, int n, int *idx);
 static Value run_list_capture(Interp *it, Value body);
@@ -372,18 +388,7 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         int open = *idx - 1;
         int close = find_close_bracket(toks, n, open);
         if (close < 0) { fprintf(stderr, "error: unmatched '['\n"); it->had_error = true; return v_none(); }
-        size_t total = 0;
-        for (int i = open + 1; i < close; i++) total += strlen(toks[i]) + 1;
-        char *buf = (char *)malloc(total + 1);
-        if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
-        size_t pos = 0;
-        for (int i = open + 1; i < close; i++) {
-            if (i > open + 1) buf[pos++] = ' ';
-            size_t slen = strlen(toks[i]);
-            memcpy(buf + pos, toks[i], slen);
-            pos += slen;
-        }
-        buf[pos] = '\0';
+        char *buf = concat_tokens(toks, open + 1, close);
         *idx = close + 1;
         return (Value){.type = VAL_LIST, .num = 0, .word = buf};
     }
@@ -458,7 +463,7 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             Value tbody = eval_expr(it, toks, n, idx);
             Value fbody = v_none();
             if (!strcmp(cmd, "ifelse")) fbody = eval_expr(it, toks, n, idx);
-            if (tbody.type != VAL_LIST) { fprintf(stderr, "error: if requires a list\n"); it->had_error = true; v_free(&tbody); v_free(&fbody); return false; }
+            if (tbody.type != VAL_LIST) { fprintf(stderr, "error: %s requires a list\n", cmd); it->had_error = true; v_free(&tbody); v_free(&fbody); return false; }
             if (!strcmp(cmd, "ifelse") && fbody.type != VAL_LIST) { fprintf(stderr, "error: ifelse requires two lists\n"); it->had_error = true; v_free(&tbody); v_free(&fbody); return false; }
             Value branch = cond ? v_copy(tbody) : v_copy(fbody);
             v_free(&tbody); v_free(&fbody);
@@ -520,10 +525,8 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             } else if (r.type != VAL_NONE) {
                 fprintf(stderr, "error: macro must output a list\n");
                 it->had_error = true;
-                v_free(&r);
-            } else {
-                v_free(&r);
             }
+            v_free(&r);
         } else {
             v_free(&r);
         }
