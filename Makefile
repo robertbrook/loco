@@ -1,7 +1,10 @@
 CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -O2
-READLINE_CFLAGS := -DHAVE_READLINE
-READLINE_LIBS := -lreadline
+MATH_LIBS := -lm
+
+# Detect readline availability at build time
+READLINE_CFLAGS := $(shell pkg-config --cflags readline 2>/dev/null || (echo | $(CC) -x c - -lreadline -o /dev/null 2>/dev/null && echo -DHAVE_READLINE) || true)
+READLINE_LIBS   := $(shell pkg-config --libs readline 2>/dev/null || (echo | $(CC) -x c - -lreadline -o /dev/null 2>/dev/null && echo -lreadline) || true)
 
 TARGET := loco
 
@@ -10,7 +13,7 @@ TARGET := loco
 all: $(TARGET)
 
 $(TARGET): loco.c
-	$(CC) $(CFLAGS) $(READLINE_CFLAGS) $< -o $@ $(READLINE_LIBS)
+	$(CC) $(CFLAGS) $(READLINE_CFLAGS) $< -o $@ $(READLINE_LIBS) $(MATH_LIBS)
 
 test: $(TARGET)
 	sh tests/smoke.sh
