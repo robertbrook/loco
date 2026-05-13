@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -407,8 +408,10 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
             if (max <= 0) out = 0;
             else {
                 unsigned long long umax = (unsigned long long)max;
-                if (umax <= (unsigned long long)RAND_MAX + 1ULL) {
-                    unsigned long long bucket = ((unsigned long long)RAND_MAX + 1ULL) / umax;
+                unsigned long long rand_span = (unsigned long long)RAND_MAX;
+                if (rand_span < ULLONG_MAX) rand_span += 1ULL;
+                if (umax <= rand_span) {
+                    unsigned long long bucket = rand_span / umax;
                     unsigned long long limit = bucket * umax;
                     unsigned long long r = 0;
                     do {
@@ -787,7 +790,7 @@ static void interp_init(Interp *it) {
     it->global_scope = scope_new(NULL);
     it->current_scope = it->global_scope;
     it->output = v_none();
-    srand((unsigned int)(time(NULL) ^ (time_t)getpid()));
+    srand((unsigned int)(time(NULL) ^ (time_t)(unsigned int)getpid()));
 }
 
 static void interp_free(Interp *it) {

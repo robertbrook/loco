@@ -102,6 +102,11 @@ words
 LOGO
 
 # Verify that known built-in words appear in output
-for word in print type show make local localmake repeat if ifelse output stop words sum difference product quotient remainder modulo power sqrt int round abs minus random lessp greaterp equalp less? greater? equal? notequalp notequal? and or not numberp wordp listp emptyp memberp word sentence se list first last butfirst bf butlast bl item count member thing greet; do
+for word in \
+    print type show make local localmake repeat if ifelse output stop words \
+    sum difference product quotient remainder modulo power sqrt int round abs minus random \
+    lessp greaterp equalp less? greater? equal? notequalp notequal? and or not \
+    numberp wordp listp emptyp memberp word sentence se list first last butfirst bf \
+    butlast bl item count member thing greet; do
     grep -qw "$word" "$tmp_words_output" || { echo "FAIL: '$word' not found in words output"; exit 1; }
 done
