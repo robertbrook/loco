@@ -1,5 +1,4 @@
 #include <ctype.h>
-#include <stdint.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -18,7 +17,8 @@
 typedef enum {
     VAL_NONE,
     VAL_NUM,
-    VAL_WORD
+    VAL_WORD,
+    VAL_LIST
 } ValueType;
 
 typedef struct {
@@ -81,14 +81,16 @@ static char *dupstr(const char *s) {
 static Value v_none(void) { return (Value){.type = VAL_NONE, .num = 0, .word = NULL}; }
 static Value v_num(double n) { return (Value){.type = VAL_NUM, .num = n, .word = NULL}; }
 static Value v_word(const char *s) { return (Value){.type = VAL_WORD, .num = 0, .word = dupstr(s)}; }
+static Value v_list(const char *s) { return (Value){.type = VAL_LIST, .num = 0, .word = dupstr(s)}; }
 
 static void v_free(Value *v) {
-    if (v->type == VAL_WORD && v->word) free(v->word);
+    if ((v->type == VAL_WORD || v->type == VAL_LIST) && v->word) free(v->word);
     *v = v_none();
 }
 
 static Value v_copy(Value v) {
     if (v.type == VAL_WORD && v.word) return v_word(v.word);
+    if (v.type == VAL_LIST && v.word) return v_list(v.word);
     return v;
 }
 
@@ -102,7 +104,7 @@ static bool parse_num(const char *s, double *out) {
 
 static double to_num(Value v) {
     if (v.type == VAL_NUM) return v.num;
-    if (v.type == VAL_WORD && v.word) {
+    if ((v.type == VAL_WORD || v.type == VAL_LIST) && v.word) {
         double n = 0;
         if (parse_num(v.word, &n)) return n;
     }
@@ -111,7 +113,7 @@ static double to_num(Value v) {
 
 static bool to_bool(Value v) {
     if (v.type == VAL_NUM) return v.num != 0;
-    if (v.type == VAL_WORD && v.word) {
+    if ((v.type == VAL_WORD || v.type == VAL_LIST) && v.word) {
         if (!strcmp(v.word, "true")) return true;
         if (!strcmp(v.word, "false")) return false;
         double n = 0;
@@ -122,7 +124,7 @@ static bool to_bool(Value v) {
 }
 
 static char *value_to_word(Value v) {
-    if (v.type == VAL_WORD && v.word) return dupstr(v.word);
+    if ((v.type == VAL_WORD || v.type == VAL_LIST) && v.word) return dupstr(v.word);
     if (v.type == VAL_NUM) {
         char buf[64];
         long long integer_part = (long long)v.num;
@@ -140,7 +142,7 @@ static void print_value(Value v) {
         long long integer_part = (long long)v.num;
         if ((double)integer_part == v.num) printf("%lld\n", integer_part);
         else printf("%g\n", v.num);
-    } else if (v.type == VAL_WORD && v.word) {
+    } else if ((v.type == VAL_WORD || v.type == VAL_LIST) && v.word) {
         printf("%s\n", v.word);
     } else {
         printf("\n");
@@ -152,7 +154,7 @@ static void type_value(Value v) {
         long long integer_part = (long long)v.num;
         if ((double)integer_part == v.num) printf("%lld", integer_part);
         else printf("%g", v.num);
-    } else if (v.type == VAL_WORD && v.word) {
+    } else if ((v.type == VAL_WORD || v.type == VAL_LIST) && v.word) {
         printf("%s", v.word);
     }
 }
@@ -414,8 +416,7 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
                     } while (r >= limit);
                     out = (double)(r % umax);
                 } else {
-                    uint64_t r = ((uint64_t)(unsigned int)rand() << 32) ^ (uint64_t)(unsigned int)rand();
-                    out = (double)(r % umax);
+                    out = floor(((double)rand() / ((double)RAND_MAX + 1.0)) * (double)umax);
                 }
             }
         }
@@ -430,16 +431,16 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         if (!strcmp(t, "lessp") || !strcmp(t, "less?")) out = to_num(a) < to_num(b);
         if (!strcmp(t, "greaterp") || !strcmp(t, "greater?")) out = to_num(a) > to_num(b);
         if (!strcmp(t, "equalp") || !strcmp(t, "equal?")) {
-            if (a.type == VAL_WORD || b.type == VAL_WORD) {
-                const char *aw = (a.type == VAL_WORD && a.word) ? a.word : "";
-                const char *bw = (b.type == VAL_WORD && b.word) ? b.word : "";
+            if (a.type == VAL_WORD || b.type == VAL_WORD || a.type == VAL_LIST || b.type == VAL_LIST) {
+                const char *aw = ((a.type == VAL_WORD || a.type == VAL_LIST) && a.word) ? a.word : "";
+                const char *bw = ((b.type == VAL_WORD || b.type == VAL_LIST) && b.word) ? b.word : "";
                 out = !strcmp(aw, bw);
             } else out = to_num(a) == to_num(b);
         }
         if (!strcmp(t, "notequalp") || !strcmp(t, "notequal?")) {
-            if (a.type == VAL_WORD || b.type == VAL_WORD) {
-                const char *aw = (a.type == VAL_WORD && a.word) ? a.word : "";
-                const char *bw = (b.type == VAL_WORD && b.word) ? b.word : "";
+            if (a.type == VAL_WORD || b.type == VAL_WORD || a.type == VAL_LIST || b.type == VAL_LIST) {
+                const char *aw = ((a.type == VAL_WORD || a.type == VAL_LIST) && a.word) ? a.word : "";
+                const char *bw = ((b.type == VAL_WORD || b.type == VAL_LIST) && b.word) ? b.word : "";
                 out = strcmp(aw, bw) != 0;
             } else out = to_num(a) != to_num(b);
         }
@@ -466,9 +467,7 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         }
         if (!strcmp(t, "wordp")) out = (a.type == VAL_WORD || a.type == VAL_NUM);
         if (!strcmp(t, "listp")) {
-            char *w = value_to_word(a);
-            out = strchr(w, ' ') != NULL;
-            free(w);
+            out = a.type == VAL_LIST;
         }
         if (!strcmp(t, "emptyp")) {
             char *w = value_to_word(a);
@@ -499,7 +498,7 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         strcat(out, aw);
         if (!join_without_space && alen > 0 && blen > 0) strcat(out, " ");
         strcat(out, bw);
-        Value result = v_word(out);
+        Value result = !strcmp(t, "word") ? v_word(out) : v_list(out);
         free(out); free(aw); free(bw);
         v_free(&a); v_free(&b);
         return result;
@@ -560,7 +559,7 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
     }
     if (!strcmp(t, "thing")) {
         Value name = eval_expr(it, toks, n, idx);
-        const char *var = (name.type == VAL_WORD && name.word) ? name.word : "";
+        const char *var = ((name.type == VAL_WORD || name.type == VAL_LIST) && name.word) ? name.word : "";
         Var *v = find_var(it->current_scope, var);
         Value out = v ? v_copy(v->value) : v_none();
         if (!v) { fprintf(stderr, "error: unknown variable '%s'\n", var); it->had_error = true; }
@@ -788,7 +787,7 @@ static void interp_init(Interp *it) {
     it->global_scope = scope_new(NULL);
     it->current_scope = it->global_scope;
     it->output = v_none();
-    srand((unsigned int)time(NULL));
+    srand((unsigned int)(time(NULL) ^ (time_t)getpid()));
 }
 
 static void interp_free(Interp *it) {

@@ -48,6 +48,7 @@ print or 0 2
 print not 0
 print numberp "123
 print wordp 10
+print listp list "a "b
 print emptyp "
 print notequalp 1 2
 print equal? 3 3
@@ -75,6 +76,7 @@ log
 o
 4
 0
+1
 1
 1
 1
