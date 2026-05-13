@@ -25,11 +25,14 @@ Script mode:
 ## Supported features
 
 - Variables (`make`, `:name`, `thing`)
-- Expressions (`sum`, `difference`, `product`, `quotient`)
-- Comparisons (`lessp`, `greaterp`, `equalp`)
-- Control flow (`repeat`, `if`, `ifelse`)
+- Expressions (`sum`, `difference`, `product`, `quotient`, `remainder`, `power`, `abs`, `sqrt`, trig/log)
+- Word/list operations (`word`, `list`, `sentence`, `first`, `last`, `butfirst`, `butlast`, `item`, `count`)
+- Predicates and logic (`lessp`, `greaterp`, `equalp`, `emptyp`, `numberp`, `wordp`, `listp`, `and`, `or`, `not`)
+- Control flow (`repeat`, `if`, `ifelse`, `run`, `catch`, `throw`)
 - User procedures (`to`, `end`, `output`, `stop`)
-- Console output (`print`)
+- Property lists (`putProp`, `getProp`, `remProp`, `propList`)
+- Console and text I/O (`print`, `show`, `type`, `readWord`, `readChar`, `readChars`, `readList`)
+- Utility words (`wait`, `date`, `time`, `words`)
 
 ## Test
 
