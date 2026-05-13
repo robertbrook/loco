@@ -771,7 +771,7 @@ module Loco
           tf.puts
         end
         tf.close
-        system("#{editor} #{tf.path}")
+        system(editor, tf.path)
         # Re-load
         run(File.read(tf.path))
       ensure
