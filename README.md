@@ -30,6 +30,8 @@ Script mode:
 - Control flow (`repeat`, `if`, `ifelse`)
 - User procedures (`to`, `end`, `output`, `stop`)
 - Console output (`print`)
+- Quotations/lists (`[...]`, `run`)
+- Macros (`macro`)
 
 ## Test
 

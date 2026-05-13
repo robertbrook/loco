@@ -28,3 +28,32 @@ good
 EXPECTED
 
 cmp -s "$tmp_expected" "$tmp_output"
+
+cat <<'LOGO' | ./loco > "$tmp_output"
+make "q [print "stored]
+run :q
+run [print sum 2 3]
+make "b [print "branch-ok]
+if 1 :b
+make "x 5
+macro mydo :body
+output :body
+end
+mydo [make "x product :x 3]
+print :x
+macro mywhen :cond :body
+ifelse :cond [output :body] [output []]
+end
+mywhen 1 [print "macro-yes]
+mywhen 0 [print "macro-no]
+LOGO
+
+cat <<'EXPECTED' > "$tmp_expected"
+stored
+5
+branch-ok
+15
+macro-yes
+EXPECTED
+
+cmp -s "$tmp_expected" "$tmp_output"

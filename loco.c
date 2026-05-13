@@ -10,7 +10,8 @@
 typedef enum {
     VAL_NONE,
     VAL_NUM,
-    VAL_WORD
+    VAL_WORD,
+    VAL_LIST
 } ValueType;
 
 typedef struct {
@@ -35,11 +36,13 @@ typedef struct Proc {
     char **params;
     int param_count;
     char *body;
+    bool is_macro;
     struct Proc *next;
 } Proc;
 
 typedef struct {
     bool active;
+    bool is_macro;
     char *name;
     char **params;
     int param_count;
@@ -73,14 +76,16 @@ static char *dupstr(const char *s) {
 static Value v_none(void) { return (Value){.type = VAL_NONE, .num = 0, .word = NULL}; }
 static Value v_num(double n) { return (Value){.type = VAL_NUM, .num = n, .word = NULL}; }
 static Value v_word(const char *s) { return (Value){.type = VAL_WORD, .num = 0, .word = dupstr(s)}; }
+static Value v_list(const char *s) { return (Value){.type = VAL_LIST, .num = 0, .word = dupstr(s ? s : "")}; }
 
 static void v_free(Value *v) {
-    if (v->type == VAL_WORD && v->word) free(v->word);
+    if ((v->type == VAL_WORD || v->type == VAL_LIST) && v->word) free(v->word);
     *v = v_none();
 }
 
 static Value v_copy(Value v) {
     if (v.type == VAL_WORD && v.word) return v_word(v.word);
+    if (v.type == VAL_LIST) return v_list(v.word);
     return v;
 }
 
@@ -108,6 +113,8 @@ static void print_value(Value v) {
         else printf("%g\n", v.num);
     } else if (v.type == VAL_WORD && v.word) {
         printf("%s\n", v.word);
+    } else if (v.type == VAL_LIST) {
+        printf("[%s]\n", v.word ? v.word : "");
     } else {
         printf("\n");
     }
@@ -239,6 +246,7 @@ static void free_tokens(char **toks, int n) {
 
 static Value eval_expr(Interp *it, char **toks, int n, int *idx);
 static bool exec_tokens(Interp *it, char **toks, int n, int *idx);
+static Value run_list_capture(Interp *it, Value body);
 
 static Value invoke_proc(Interp *it, Proc *p, Value *args) {
     Scope *local = scope_new(it->current_scope);
@@ -275,6 +283,32 @@ static Value invoke_proc(Interp *it, Proc *p, Value *args) {
     it->output = saved_output;
     it->current_scope = local->parent;
     scope_free(local);
+    return out;
+}
+
+static Value run_list_capture(Interp *it, Value body) {
+    if (body.type != VAL_LIST) {
+        fprintf(stderr, "error: run requires a list\n");
+        it->had_error = true;
+        return v_none();
+    }
+    char **ltoks = NULL; int ln = 0;
+    tokenize(body.word ? body.word : "", &ltoks, &ln);
+    bool saved_stop = it->stop;
+    bool saved_out = it->has_output;
+    Value saved_output = v_copy(it->output);
+    it->stop = false;
+    it->has_output = false;
+    v_free(&it->output);
+    it->output = v_none();
+    int li = 0;
+    exec_tokens(it, ltoks, ln, &li);
+    free_tokens(ltoks, ln);
+    Value out = it->has_output ? v_copy(it->output) : v_none();
+    it->stop = saved_stop;
+    it->has_output = saved_out;
+    v_free(&it->output);
+    it->output = saved_output;
     return out;
 }
 
@@ -334,15 +368,46 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         return out;
     }
 
+    if (!strcmp(t, "[")) {
+        int open = *idx - 1;
+        int close = find_close_bracket(toks, n, open);
+        if (close < 0) { fprintf(stderr, "error: unmatched '['\n"); it->had_error = true; return v_none(); }
+        size_t total = 0;
+        for (int i = open + 1; i < close; i++) total += strlen(toks[i]) + 1;
+        char *buf = (char *)malloc(total + 1);
+        if (!buf) { fprintf(stderr, "out of memory\n"); exit(1); }
+        size_t pos = 0;
+        for (int i = open + 1; i < close; i++) {
+            if (i > open + 1) buf[pos++] = ' ';
+            size_t slen = strlen(toks[i]);
+            memcpy(buf + pos, toks[i], slen);
+            pos += slen;
+        }
+        buf[pos] = '\0';
+        *idx = close + 1;
+        return (Value){.type = VAL_LIST, .num = 0, .word = buf};
+    }
+    if (!strcmp(t, "run")) {
+        Value body = eval_expr(it, toks, n, idx);
+        Value out = run_list_capture(it, body);
+        v_free(&body);
+        return out;
+    }
+
     Proc *p = find_proc(it, t);
     if (p) {
         Value *args = (Value *)calloc((size_t)p->param_count, sizeof(*args));
         if (!args) { fprintf(stderr, "out of memory\n"); exit(1); }
         for (int i = 0; i < p->param_count; i++) args[i] = eval_expr(it, toks, n, idx);
-        Value out = invoke_proc(it, p, args);
+        Value r = invoke_proc(it, p, args);
         for (int i = 0; i < p->param_count; i++) v_free(&args[i]);
         free(args);
-        return out;
+        if (p->is_macro) {
+            Value out = run_list_capture(it, r);
+            v_free(&r);
+            return out;
+        }
+        return r;
     }
 
     return v_word(t);
@@ -373,38 +438,39 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             Value c = eval_expr(it, toks, n, idx);
             int times = (int)to_num(c);
             v_free(&c);
-            if (*idx >= n || strcmp(toks[*idx], "[")) { fprintf(stderr, "error: repeat requires [ ... ]\n"); it->had_error = true; return false; }
-            int open = *idx;
-            int close = find_close_bracket(toks, n, open);
-            if (close < 0) { fprintf(stderr, "error: unmatched '['\n"); it->had_error = true; return false; }
+            Value body = eval_expr(it, toks, n, idx);
+            if (body.type != VAL_LIST) { fprintf(stderr, "error: repeat requires a list\n"); it->had_error = true; v_free(&body); return false; }
+            char **ltoks = NULL; int ln = 0;
+            tokenize(body.word ? body.word : "", &ltoks, &ln);
+            v_free(&body);
             for (int r = 0; r < times && !it->stop && !it->has_output; r++) {
-                int inner = open + 1;
-                if (!exec_tokens(it, toks, close, &inner)) return false;
+                int li = 0;
+                if (!exec_tokens(it, ltoks, ln, &li)) { free_tokens(ltoks, ln); return false; }
             }
-            *idx = close + 1;
+            free_tokens(ltoks, ln);
+            if (it->stop || it->has_output) return true;
             continue;
         }
         if (!strcmp(cmd, "if") || !strcmp(cmd, "ifelse")) {
             Value c = eval_expr(it, toks, n, idx);
             bool cond = to_num(c) != 0;
             v_free(&c);
-            if (*idx >= n || strcmp(toks[*idx], "[")) { fprintf(stderr, "error: if requires [ ... ]\n"); it->had_error = true; return false; }
-            int t_open = *idx, t_close = find_close_bracket(toks, n, t_open);
-            if (t_close < 0) { fprintf(stderr, "error: unmatched '['\n"); it->had_error = true; return false; }
-            int f_open = t_close + 1, f_close = -1;
-            if (!strcmp(cmd, "ifelse")) {
-                if (f_open >= n || strcmp(toks[f_open], "[")) { fprintf(stderr, "error: ifelse requires second [ ... ]\n"); it->had_error = true; return false; }
-                f_close = find_close_bracket(toks, n, f_open);
-                if (f_close < 0) { fprintf(stderr, "error: unmatched '['\n"); it->had_error = true; return false; }
+            Value tbody = eval_expr(it, toks, n, idx);
+            Value fbody = v_none();
+            if (!strcmp(cmd, "ifelse")) fbody = eval_expr(it, toks, n, idx);
+            if (tbody.type != VAL_LIST) { fprintf(stderr, "error: if requires a list\n"); it->had_error = true; v_free(&tbody); v_free(&fbody); return false; }
+            if (!strcmp(cmd, "ifelse") && fbody.type != VAL_LIST) { fprintf(stderr, "error: ifelse requires two lists\n"); it->had_error = true; v_free(&tbody); v_free(&fbody); return false; }
+            Value branch = cond ? v_copy(tbody) : v_copy(fbody);
+            v_free(&tbody); v_free(&fbody);
+            if (branch.type == VAL_LIST) {
+                char **ltoks = NULL; int ln = 0;
+                tokenize(branch.word ? branch.word : "", &ltoks, &ln);
+                int li = 0;
+                exec_tokens(it, ltoks, ln, &li);
+                free_tokens(ltoks, ln);
             }
-            if (cond) {
-                int inner = t_open + 1;
-                if (!exec_tokens(it, toks, t_close, &inner)) return false;
-            } else if (!strcmp(cmd, "ifelse")) {
-                int inner = f_open + 1;
-                if (!exec_tokens(it, toks, f_close, &inner)) return false;
-            }
-            *idx = (!strcmp(cmd, "ifelse")) ? (f_close + 1) : (t_close + 1);
+            v_free(&branch);
+            if (it->stop || it->has_output) return true;
             continue;
         }
         if (!strcmp(cmd, "output")) {
@@ -417,6 +483,23 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             it->stop = true;
             return true;
         }
+        if (!strcmp(cmd, "run")) {
+            Value body = eval_expr(it, toks, n, idx);
+            if (body.type != VAL_LIST) {
+                fprintf(stderr, "error: run requires a list\n");
+                it->had_error = true;
+                v_free(&body);
+                return false;
+            }
+            char **ltoks = NULL; int ln = 0;
+            tokenize(body.word ? body.word : "", &ltoks, &ln);
+            v_free(&body);
+            int li = 0;
+            exec_tokens(it, ltoks, ln, &li);
+            free_tokens(ltoks, ln);
+            if (it->stop || it->has_output) return true;
+            continue;
+        }
 
         Proc *p = find_proc(it, cmd);
         if (!p) { fprintf(stderr, "error: unknown command '%s'\n", cmd); it->had_error = true; return false; }
@@ -424,9 +507,26 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
         if (!args) { fprintf(stderr, "out of memory\n"); exit(1); }
         for (int i = 0; i < p->param_count; i++) args[i] = eval_expr(it, toks, n, idx);
         Value r = invoke_proc(it, p, args);
-        v_free(&r);
         for (int i = 0; i < p->param_count; i++) v_free(&args[i]);
         free(args);
+        if (p->is_macro) {
+            if (r.type == VAL_LIST) {
+                char **ltoks = NULL; int ln = 0;
+                tokenize(r.word ? r.word : "", &ltoks, &ln);
+                v_free(&r);
+                int li = 0;
+                exec_tokens(it, ltoks, ln, &li);
+                free_tokens(ltoks, ln);
+            } else if (r.type != VAL_NONE) {
+                fprintf(stderr, "error: macro must output a list\n");
+                it->had_error = true;
+                v_free(&r);
+            } else {
+                v_free(&r);
+            }
+        } else {
+            v_free(&r);
+        }
         if (it->stop || it->has_output) return true;
     }
     return true;
@@ -434,6 +534,7 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
 
 static void builder_reset(ProcBuilder *b) {
     b->active = false;
+    b->is_macro = false;
     free(b->name); b->name = NULL;
     for (int i = 0; i < b->param_count; i++) free(b->params[i]);
     free(b->params); b->params = NULL;
@@ -457,10 +558,11 @@ static void builder_append(ProcBuilder *b, const char *line) {
     b->body[b->body_len] = '\0';
 }
 
-static void start_proc(Interp *it, char **toks, int n) {
-    if (n < 2) { fprintf(stderr, "error: to requires a name\n"); it->had_error = true; return; }
+static void start_proc(Interp *it, char **toks, int n, bool is_macro) {
+    if (n < 2) { fprintf(stderr, "error: %s requires a name\n", is_macro ? "macro" : "to"); it->had_error = true; return; }
     builder_reset(&it->builder);
     it->builder.active = true;
+    it->builder.is_macro = is_macro;
     it->builder.name = dupstr(toks[1]);
     for (int i = 2; i < n; i++) {
         if (toks[i][0] != ':') { fprintf(stderr, "error: parameter must start with ':'\n"); it->had_error = true; continue; }
@@ -478,6 +580,7 @@ static void finish_proc(Interp *it) {
     p->params = it->builder.params;
     p->param_count = it->builder.param_count;
     p->body = it->builder.body ? it->builder.body : dupstr("");
+    p->is_macro = it->builder.is_macro;
     it->builder.name = NULL;
     it->builder.params = NULL;
     it->builder.param_count = 0;
@@ -498,7 +601,8 @@ static void execute_line(Interp *it, const char *line) {
         free_tokens(toks, n);
         return;
     }
-    if (!strcmp(toks[0], "to")) { start_proc(it, toks, n); free_tokens(toks, n); return; }
+    if (!strcmp(toks[0], "to")) { start_proc(it, toks, n, false); free_tokens(toks, n); return; }
+    if (!strcmp(toks[0], "macro")) { start_proc(it, toks, n, true); free_tokens(toks, n); return; }
     int i = 0;
     exec_tokens(it, toks, n, &i);
     free_tokens(toks, n);
