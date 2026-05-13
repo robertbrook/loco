@@ -793,10 +793,10 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
             if (is_list_literal(hay)) {
                 int cn = 0;
                 char **items = split_list_elements(hay, &cn);
-                for (int i = 0; i < cn; i++) if (str_ieq(items[i], needle)) { out = 1; break; }
+                for (int i = 0; i < cn; i++) if (!strcmp(items[i], needle)) { out = 1; break; }
                 free_list_elements(items, cn);
             } else {
-                out = str_ieq(hay, needle);
+                out = strstr(hay, needle) != NULL;
             }
             free(needle); free(hay);
         }
