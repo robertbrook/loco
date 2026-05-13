@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifdef HAVE_READLINE
@@ -503,8 +504,12 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         } else if (!strcmp(t, "butfirst") || !strcmp(t, "bf")) {
             out = v_word(aw + 1);
         } else if (!strcmp(t, "butlast") || !strcmp(t, "bl")) {
-            aw[len - 1] = '\0';
-            out = v_word(aw);
+            char *tmp = (char *)malloc(len);
+            if (!tmp) { fprintf(stderr, "out of memory\n"); exit(1); }
+            memcpy(tmp, aw, len - 1);
+            tmp[len - 1] = '\0';
+            out = v_word(tmp);
+            free(tmp);
         }
         free(aw);
         v_free(&a);
@@ -764,7 +769,7 @@ static void interp_init(Interp *it) {
     it->global_scope = scope_new(NULL);
     it->current_scope = it->global_scope;
     it->output = v_none();
-    srand(1);
+    srand((unsigned int)time(NULL));
 }
 
 static void interp_free(Interp *it) {

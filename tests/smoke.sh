@@ -3,7 +3,10 @@ set -eu
 
 tmp_output="$(mktemp)"
 tmp_expected="$(mktemp)"
-trap 'rm -f "$tmp_output" "$tmp_expected"' EXIT
+tmp_more_output=""
+tmp_more_expected=""
+tmp_words_output=""
+trap 'rm -f "$tmp_output" "$tmp_expected" "$tmp_more_output" "$tmp_more_expected" "$tmp_words_output"' EXIT
 
 cat <<'LOGO' | ./loco > "$tmp_output"
 make "x 10
@@ -32,7 +35,6 @@ cmp -s "$tmp_expected" "$tmp_output"
 # Test: additional non-graphics words
 tmp_more_output="$(mktemp)"
 tmp_more_expected="$(mktemp)"
-trap 'rm -f "$tmp_output" "$tmp_expected" "${tmp_words_output:-}" "$tmp_more_output" "$tmp_more_expected"' EXIT
 
 cat <<'LOGO' | ./loco > "$tmp_more_output"
 print word "lo "go
@@ -94,7 +96,6 @@ cmp -s "$tmp_more_expected" "$tmp_more_output"
 
 # Test: words prints built-in and user-defined procedures
 tmp_words_output="$(mktemp)"
-trap 'rm -f "$tmp_output" "$tmp_expected" "${tmp_words_output:-}" "$tmp_more_output" "$tmp_more_expected"' EXIT
 
 cat <<'LOGO' | ./loco > "$tmp_words_output"
 to greet
