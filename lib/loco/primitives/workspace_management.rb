@@ -489,7 +489,7 @@ module Loco
         register_primitive('EDITFILE', 1, 1, 1) do |interp, filename|
           editor = ENV['EDITOR'] || 'vi'
           name = interp.full_path(interp.logo_to_word(filename))
-          system("#{editor} #{name}")
+          system(editor, name)
           nil
         end
 

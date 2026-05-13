@@ -89,10 +89,12 @@ module Loco
         end
         register_alias('RCS', 'READCHARS')
 
-        # SHELL
+        # SHELL - UCB Logo primitive; executes the given shell command string.
+        # NOTE: SHELL is inherently unsafe and executes arbitrary commands.
         register_primitive('SHELL', 1, 1, 2) do |interp, command, wordflag = nil|
+          require 'open3'
           cmd = interp.logo_to_word(command)
-          result = `#{cmd}`
+          result, = Open3.capture2e('/bin/sh', '-c', cmd)
           if wordflag && interp.logo_true?(wordflag)
             result.chomp
           else
