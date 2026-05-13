@@ -10,7 +10,7 @@ TARGET := loco
 all: $(TARGET)
 
 $(TARGET): loco.c
-	$(CC) $(CFLAGS) $(READLINE_CFLAGS) $< -o $@ $(READLINE_LIBS)
+	$(CC) $(CFLAGS) $(READLINE_CFLAGS) $< -o $@ $(READLINE_LIBS) -lm
 
 test: $(TARGET)
 	sh tests/smoke.sh
