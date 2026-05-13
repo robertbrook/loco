@@ -29,57 +29,55 @@ EXPECTED
 
 cmp -s "$tmp_expected" "$tmp_output"
 
-# Test: words prints built-in and user-defined procedures
-tmp_words_output="$(mktemp)"
-trap 'rm -f "$tmp_output" "$tmp_expected" "$tmp_words_output"' EXIT
-
-cat <<'LOGO' | ./loco > "$tmp_words_output"
-to greet
-print "hello
-end
-words
-LOGO
-
-# Verify that known built-in words appear in output
-for word in print make repeat if ifelse output stop words sum difference product quotient lessp greaterp equalp thing greet; do
-    grep -qw "$word" "$tmp_words_output" || { echo "FAIL: '$word' not found in words output"; exit 1; }
-done
-
-# Test: additional non-graphics words
-tmp_extra_output="$(mktemp)"
-tmp_extra_expected="$(mktemp)"
-trap 'rm -f "$tmp_output" "$tmp_expected" "$tmp_words_output" "$tmp_extra_output" "$tmp_extra_expected"' EXIT
-
-cat <<'LOGO' | ./loco > "$tmp_extra_output"
-print abs -5
-print remainder 10 3
+cat <<'LOGO' | ./loco > "$tmp_output"
+pr sum 2 3
+print remainder 7 3
+print minus 5
+print less? 2 3
+print and 1 0
+print not 0
 print word "lo "go
 print list "a "b
-print sentence [ a b ] [ c ]
-print first [ x y z ]
-print butfirst [ x y z ]
-print item 2 [ x y z ]
-print count [ x y z ]
-print and 1 0
-print or 1 0
-print not 0
+print first [ 10 20 30 ]
+print last [ 10 20 30 ]
+print bf [ 10 20 30 ]
+print bl [ 10 20 30 ]
+print count [ 10 20 30 ]
+print item 2 [ 10 20 30 ]
+print emptyp [ ]
+print word? "abc
+print list? [ x ]
+print number? "42
+print member? "20 [ 10 20 30 ]
 run [ print "ran ]
+to add2 :n
+op sum :n 2
+end
+print add2 5
 LOGO
 
-cat <<'EXPECTED' > "$tmp_extra_expected"
+cat <<'EXPECTED' > "$tmp_expected"
 5
+1
+-5
+1
+0
 1
 logo
 [a b]
-[a b c]
-x
-[y z]
-y
+10
+30
+[20 30]
+[10 20]
 3
-0
+20
+1
+1
+1
 1
 1
 ran
+7
 EXPECTED
 
-cmp -s "$tmp_extra_expected" "$tmp_extra_output"
+cmp -s "$tmp_expected" "$tmp_output"

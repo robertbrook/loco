@@ -25,14 +25,12 @@ Script mode:
 ## Supported features
 
 - Variables (`make`, `:name`, `thing`)
-- Expressions (`sum`, `difference`, `product`, `quotient`, `remainder`, `power`, `abs`, `sqrt`, trig/log)
-- Word/list operations (`word`, `list`, `sentence`, `first`, `last`, `butfirst`, `butlast`, `item`, `count`)
-- Predicates and logic (`lessp`, `greaterp`, `equalp`, `emptyp`, `numberp`, `wordp`, `listp`, `and`, `or`, `not`)
-- Control flow (`repeat`, `if`, `ifelse`, `run`, `catch`, `throw`)
+- Arithmetic and math (`sum`, `difference`, `product`, `quotient`, `remainder`, `power`, `minus`, `abs`, `sqrt`, trig)
+- Comparisons and logic (`lessp`/`less?`, `greaterp`/`greater?`, `equalp`/`equal?`, `and`, `or`, `not`)
+- Words/lists (`word`, `list`, `sentence`/`se`, `first`, `last`, `butfirst`/`bf`, `butlast`/`bl`, `count`, `item`, predicates)
+- Control flow (`repeat`, `if`, `ifelse`, `run`, `wait`)
 - User procedures (`to`, `end`, `output`, `stop`)
-- Property lists (`putProp`, `getProp`, `remProp`, `propList`)
-- Console and text I/O (`print`, `show`, `type`, `readWord`, `readChar`, `readChars`, `readList`)
-- Utility words (`wait`, `date`, `time`, `words`)
+- Console output (`print`/`pr`, `show`, `type`)
 
 ## Test
 
