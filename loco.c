@@ -5,6 +5,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef HAVE_READLINE
+#include <readline/readline.h>
+#include <readline/history.h>
+#endif
+
 #define MAX_LINE_LENGTH 8192
 
 typedef enum {
@@ -531,17 +536,35 @@ static void run_stream(Interp *it, FILE *f) {
     char line[MAX_LINE_LENGTH];
     bool interactive = (f == stdin) && isatty(STDIN_FILENO);
     while (1) {
-        if (interactive) { fputs("> ", stdout); fflush(stdout); }
-        if (!fgets(line, sizeof(line), f)) break;
-        size_t len = strlen(line);
-        if (len > 0 && line[len - 1] != '\n' && !feof(f)) {
-            int c;
-            while ((c = fgetc(f)) != '\n' && c != EOF) {}
-            fprintf(stderr, "error: input line too long (max %d bytes)\n", MAX_LINE_LENGTH - 1);
-            it->had_error = true;
-            continue;
+#ifdef HAVE_READLINE
+        if (interactive) {
+            char *rl = readline("> ");
+            if (!rl) break;
+            size_t len = strlen(rl);
+            if (len >= MAX_LINE_LENGTH) {
+                fprintf(stderr, "error: input line too long (max %d bytes)\n", MAX_LINE_LENGTH - 1);
+                it->had_error = true;
+                free(rl);
+                continue;
+            }
+            if (*rl) add_history(rl);
+            memcpy(line, rl, len + 1);
+            free(rl);
+        } else
+#endif
+        {
+            if (interactive) { fputs("> ", stdout); fflush(stdout); }
+            if (!fgets(line, sizeof(line), f)) break;
+            size_t len = strlen(line);
+            if (len > 0 && line[len - 1] != '\n' && !feof(f)) {
+                int c;
+                while ((c = fgetc(f)) != '\n' && c != EOF) {}
+                fprintf(stderr, "error: input line too long (max %d bytes)\n", MAX_LINE_LENGTH - 1);
+                it->had_error = true;
+                continue;
+            }
+            while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = '\0';
         }
-        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = '\0';
         execute_line(it, line);
     }
     if (it->builder.active) { fprintf(stderr, "error: missing 'end' for procedure\n"); it->had_error = true; }
