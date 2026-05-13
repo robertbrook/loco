@@ -1,11 +1,12 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
+#include <sys/select.h>
+#include <time.h>
 
 #define MAX_LINE_LENGTH 8192
 #ifndef M_PI
@@ -470,15 +471,45 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         if (str_ieq(t, "abs")) out = fabs(av);
         if (str_ieq(t, "int")) out = floor(av);
         if (str_ieq(t, "round")) out = round(av);
-        if (str_ieq(t, "sqrt")) out = av < 0 ? 0 : sqrt(av);
+        if (str_ieq(t, "sqrt")) {
+            if (av < 0) {
+                fprintf(stderr, "error: sqrt of negative number\n");
+                it->had_error = true;
+                out = 0;
+            } else out = sqrt(av);
+        }
         if (str_ieq(t, "exp")) out = exp(av);
-        if (str_ieq(t, "ln")) out = log(av);
-        if (str_ieq(t, "log10")) out = log10(av);
+        if (str_ieq(t, "ln")) {
+            if (av <= 0) {
+                fprintf(stderr, "error: ln input must be positive\n");
+                it->had_error = true;
+                out = 0;
+            } else out = log(av);
+        }
+        if (str_ieq(t, "log10")) {
+            if (av <= 0) {
+                fprintf(stderr, "error: log10 input must be positive\n");
+                it->had_error = true;
+                out = 0;
+            } else out = log10(av);
+        }
         if (str_ieq(t, "sin")) out = sin(av * M_PI / 180.0);
         if (str_ieq(t, "cos")) out = cos(av * M_PI / 180.0);
         if (str_ieq(t, "tan")) out = tan(av * M_PI / 180.0);
-        if (str_ieq(t, "arcsin")) out = asin(av) * 180.0 / M_PI;
-        if (str_ieq(t, "arccos")) out = acos(av) * 180.0 / M_PI;
+        if (str_ieq(t, "arcsin")) {
+            if (av < -1 || av > 1) {
+                fprintf(stderr, "error: arcsin input out of range\n");
+                it->had_error = true;
+                out = 0;
+            } else out = asin(av) * 180.0 / M_PI;
+        }
+        if (str_ieq(t, "arccos")) {
+            if (av < -1 || av > 1) {
+                fprintf(stderr, "error: arccos input out of range\n");
+                it->had_error = true;
+                out = 0;
+            } else out = acos(av) * 180.0 / M_PI;
+        }
         if (str_ieq(t, "arctan")) out = atan(av) * 180.0 / M_PI;
         if (str_ieq(t, "random")) {
             int limit = (int)av;
@@ -814,9 +845,12 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             Value t = eval_expr(it, toks, n, idx);
             double tenths = to_num(t);
             if (tenths > 0) {
-                clock_t wait_ticks = (clock_t)(tenths * ((double)CLOCKS_PER_SEC / 10.0));
-                clock_t start = clock();
-                while ((clock() - start) < wait_ticks) {}
+                double total_seconds = tenths / 10.0;
+                struct timeval tv;
+                tv.tv_sec = (long)total_seconds;
+                tv.tv_usec = (long)((total_seconds - (double)tv.tv_sec) * 1000000.0);
+                if (tv.tv_usec < 0) tv.tv_usec = 0;
+                select(0, NULL, NULL, NULL, &tv);
             }
             v_free(&t);
             continue;
