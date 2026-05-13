@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <stdint.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -395,14 +396,28 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
                 it->had_error = true;
             } else out = sqrt(av);
         }
-        if (!strcmp(t, "int")) out = (long long)av;
+        if (!strcmp(t, "int")) out = trunc(av);
         if (!strcmp(t, "round")) out = round(av);
         if (!strcmp(t, "abs")) out = fabs(av);
         if (!strcmp(t, "minus")) out = -av;
         if (!strcmp(t, "random")) {
             long long max = (long long)av;
             if (max <= 0) out = 0;
-            else out = rand() % max;
+            else {
+                unsigned long long umax = (unsigned long long)max;
+                if (umax <= (unsigned long long)RAND_MAX + 1ULL) {
+                    unsigned long long bucket = ((unsigned long long)RAND_MAX + 1ULL) / umax;
+                    unsigned long long limit = bucket * umax;
+                    unsigned long long r = 0;
+                    do {
+                        r = (unsigned long long)rand();
+                    } while (r >= limit);
+                    out = (double)(r % umax);
+                } else {
+                    uint64_t r = ((uint64_t)(unsigned int)rand() << 32) ^ (uint64_t)(unsigned int)rand();
+                    out = (double)(r % umax);
+                }
+            }
         }
         v_free(&a);
         return v_num(out);
@@ -450,7 +465,11 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
             }
         }
         if (!strcmp(t, "wordp")) out = (a.type == VAL_WORD || a.type == VAL_NUM);
-        if (!strcmp(t, "listp")) out = false;
+        if (!strcmp(t, "listp")) {
+            char *w = value_to_word(a);
+            out = strchr(w, ' ') != NULL;
+            free(w);
+        }
         if (!strcmp(t, "emptyp")) {
             char *w = value_to_word(a);
             out = *w == '\0';
