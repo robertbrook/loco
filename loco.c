@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -106,6 +107,32 @@ static double to_num(Value v) {
     return 0;
 }
 
+static bool to_bool(Value v) {
+    if (v.type == VAL_NUM) return v.num != 0;
+    if (v.type == VAL_WORD && v.word) {
+        if (!strcmp(v.word, "true")) return true;
+        if (!strcmp(v.word, "false")) return false;
+        double n = 0;
+        if (parse_num(v.word, &n)) return n != 0;
+        return *v.word != '\0';
+    }
+    return false;
+}
+
+static char *value_to_word(Value v) {
+    if (v.type == VAL_WORD && v.word) return dupstr(v.word);
+    if (v.type == VAL_NUM) {
+        char buf[64];
+        long long integer_part = (long long)v.num;
+        if ((double)integer_part == v.num) snprintf(buf, sizeof(buf), "%lld", integer_part);
+        else snprintf(buf, sizeof(buf), "%g", v.num);
+        return dupstr(buf);
+    }
+    return dupstr("");
+}
+
+static Value v_bool(bool b) { return v_num(b ? 1 : 0); }
+
 static void print_value(Value v) {
     if (v.type == VAL_NUM) {
         long long integer_part = (long long)v.num;
@@ -115,6 +142,16 @@ static void print_value(Value v) {
         printf("%s\n", v.word);
     } else {
         printf("\n");
+    }
+}
+
+static void type_value(Value v) {
+    if (v.type == VAL_NUM) {
+        long long integer_part = (long long)v.num;
+        if ((double)integer_part == v.num) printf("%lld", integer_part);
+        else printf("%g", v.num);
+    } else if (v.type == VAL_WORD && v.word) {
+        printf("%s", v.word);
     }
 }
 
@@ -152,6 +189,21 @@ static Var *find_var(Scope *s, const char *name) {
 
 static void set_var(Scope *s, const char *name, Value val) {
     Var *existing = find_var(s, name);
+    if (existing) {
+        v_free(&existing->value);
+        existing->value = v_copy(val);
+        return;
+    }
+    Var *v = (Var *)calloc(1, sizeof(*v));
+    if (!v) { fprintf(stderr, "out of memory\n"); exit(1); }
+    v->name = dupstr(name);
+    v->value = v_copy(val);
+    v->next = s->vars;
+    s->vars = v;
+}
+
+static void set_local_var(Scope *s, const char *name, Value val) {
+    Var *existing = find_local(s, name);
     if (existing) {
         v_free(&existing->value);
         existing->value = v_copy(val);
@@ -296,7 +348,9 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
     double num = 0;
     if (parse_num(t, &num)) return v_num(num);
 
-    if (!strcmp(t, "sum") || !strcmp(t, "difference") || !strcmp(t, "product") || !strcmp(t, "quotient")) {
+    if (!strcmp(t, "sum") || !strcmp(t, "difference") || !strcmp(t, "product") ||
+        !strcmp(t, "quotient") || !strcmp(t, "remainder") || !strcmp(t, "modulo") ||
+        !strcmp(t, "power")) {
         Value a = eval_expr(it, toks, n, idx), b = eval_expr(it, toks, n, idx);
         double av = to_num(a), bv = to_num(b), out = 0;
         if (!strcmp(t, "sum")) out = av + bv;
@@ -311,23 +365,174 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
                 out = av / bv;
             }
         }
+        if (!strcmp(t, "remainder")) {
+            if (bv == 0) {
+                fprintf(stderr, "error: division by zero\n");
+                it->had_error = true;
+            } else out = fmod(av, bv);
+        }
+        if (!strcmp(t, "modulo")) {
+            if (bv == 0) {
+                fprintf(stderr, "error: division by zero\n");
+                it->had_error = true;
+            } else {
+                out = fmod(av, bv);
+                if (out < 0) out += fabs(bv);
+            }
+        }
+        if (!strcmp(t, "power")) out = pow(av, bv);
         v_free(&a); v_free(&b);
         return v_num(out);
     }
-    if (!strcmp(t, "lessp") || !strcmp(t, "greaterp") || !strcmp(t, "equalp")) {
+    if (!strcmp(t, "sqrt") || !strcmp(t, "int") || !strcmp(t, "round") ||
+        !strcmp(t, "abs") || !strcmp(t, "minus") || !strcmp(t, "random")) {
+        Value a = eval_expr(it, toks, n, idx);
+        double av = to_num(a), out = 0;
+        if (!strcmp(t, "sqrt")) {
+            if (av < 0) {
+                fprintf(stderr, "error: sqrt domain error\n");
+                it->had_error = true;
+            } else out = sqrt(av);
+        }
+        if (!strcmp(t, "int")) out = (long long)av;
+        if (!strcmp(t, "round")) out = round(av);
+        if (!strcmp(t, "abs")) out = fabs(av);
+        if (!strcmp(t, "minus")) out = -av;
+        if (!strcmp(t, "random")) {
+            long long max = (long long)av;
+            if (max <= 0) out = 0;
+            else out = rand() % max;
+        }
+        v_free(&a);
+        return v_num(out);
+    }
+    if (!strcmp(t, "lessp") || !strcmp(t, "greaterp") || !strcmp(t, "equalp") ||
+        !strcmp(t, "less?") || !strcmp(t, "greater?") || !strcmp(t, "equal?") ||
+        !strcmp(t, "notequalp") || !strcmp(t, "notequal?")) {
         Value a = eval_expr(it, toks, n, idx), b = eval_expr(it, toks, n, idx);
-        double out = 0;
-        if (!strcmp(t, "lessp")) out = to_num(a) < to_num(b);
-        if (!strcmp(t, "greaterp")) out = to_num(a) > to_num(b);
-        if (!strcmp(t, "equalp")) {
+        bool out = false;
+        if (!strcmp(t, "lessp") || !strcmp(t, "less?")) out = to_num(a) < to_num(b);
+        if (!strcmp(t, "greaterp") || !strcmp(t, "greater?")) out = to_num(a) > to_num(b);
+        if (!strcmp(t, "equalp") || !strcmp(t, "equal?")) {
             if (a.type == VAL_WORD || b.type == VAL_WORD) {
                 const char *aw = (a.type == VAL_WORD && a.word) ? a.word : "";
                 const char *bw = (b.type == VAL_WORD && b.word) ? b.word : "";
                 out = !strcmp(aw, bw);
             } else out = to_num(a) == to_num(b);
         }
+        if (!strcmp(t, "notequalp") || !strcmp(t, "notequal?")) {
+            if (a.type == VAL_WORD || b.type == VAL_WORD) {
+                const char *aw = (a.type == VAL_WORD && a.word) ? a.word : "";
+                const char *bw = (b.type == VAL_WORD && b.word) ? b.word : "";
+                out = strcmp(aw, bw) != 0;
+            } else out = to_num(a) != to_num(b);
+        }
         v_free(&a); v_free(&b);
-        return v_num(out);
+        return v_bool(out);
+    }
+    if (!strcmp(t, "and") || !strcmp(t, "or")) {
+        Value a = eval_expr(it, toks, n, idx), b = eval_expr(it, toks, n, idx);
+        bool out = !strcmp(t, "and") ? (to_bool(a) && to_bool(b)) : (to_bool(a) || to_bool(b));
+        v_free(&a); v_free(&b);
+        return v_bool(out);
+    }
+    if (!strcmp(t, "not") || !strcmp(t, "numberp") || !strcmp(t, "wordp") ||
+        !strcmp(t, "listp") || !strcmp(t, "emptyp") || !strcmp(t, "memberp")) {
+        Value a = eval_expr(it, toks, n, idx);
+        bool out = false;
+        if (!strcmp(t, "not")) out = !to_bool(a);
+        if (!strcmp(t, "numberp")) {
+            if (a.type == VAL_NUM) out = true;
+            else if (a.type == VAL_WORD && a.word) {
+                double ncheck = 0;
+                out = parse_num(a.word, &ncheck);
+            }
+        }
+        if (!strcmp(t, "wordp")) out = (a.type == VAL_WORD || a.type == VAL_NUM);
+        if (!strcmp(t, "listp")) out = false;
+        if (!strcmp(t, "emptyp")) {
+            char *w = value_to_word(a);
+            out = *w == '\0';
+            free(w);
+        }
+        if (!strcmp(t, "memberp")) {
+            Value b = eval_expr(it, toks, n, idx);
+            char *needle = value_to_word(a);
+            char *haystack = value_to_word(b);
+            out = strstr(haystack, needle) != NULL;
+            free(needle); free(haystack);
+            v_free(&b);
+        }
+        v_free(&a);
+        return v_bool(out);
+    }
+    if (!strcmp(t, "word") || !strcmp(t, "sentence") || !strcmp(t, "se") || !strcmp(t, "list")) {
+        Value a = eval_expr(it, toks, n, idx), b = eval_expr(it, toks, n, idx);
+        char *aw = value_to_word(a);
+        char *bw = value_to_word(b);
+        size_t alen = strlen(aw), blen = strlen(bw);
+        bool join_without_space = !strcmp(t, "word");
+        size_t out_len = alen + blen + (join_without_space ? 0 : (alen > 0 && blen > 0 ? 1 : 0));
+        char *out = (char *)malloc(out_len + 1);
+        if (!out) { fprintf(stderr, "out of memory\n"); exit(1); }
+        out[0] = '\0';
+        strcat(out, aw);
+        if (!join_without_space && alen > 0 && blen > 0) strcat(out, " ");
+        strcat(out, bw);
+        Value result = v_word(out);
+        free(out); free(aw); free(bw);
+        v_free(&a); v_free(&b);
+        return result;
+    }
+    if (!strcmp(t, "first") || !strcmp(t, "last") || !strcmp(t, "butfirst") || !strcmp(t, "bf") ||
+        !strcmp(t, "butlast") || !strcmp(t, "bl") || !strcmp(t, "count")) {
+        Value a = eval_expr(it, toks, n, idx);
+        char *aw = value_to_word(a);
+        size_t len = strlen(aw);
+        Value out = v_none();
+        if (!strcmp(t, "count")) {
+            out = v_num((double)len);
+        } else if (len == 0) {
+            out = v_word("");
+        } else if (!strcmp(t, "first")) {
+            char first[2] = {aw[0], '\0'};
+            out = v_word(first);
+        } else if (!strcmp(t, "last")) {
+            char last[2] = {aw[len - 1], '\0'};
+            out = v_word(last);
+        } else if (!strcmp(t, "butfirst") || !strcmp(t, "bf")) {
+            out = v_word(aw + 1);
+        } else if (!strcmp(t, "butlast") || !strcmp(t, "bl")) {
+            aw[len - 1] = '\0';
+            out = v_word(aw);
+        }
+        free(aw);
+        v_free(&a);
+        return out;
+    }
+    if (!strcmp(t, "item")) {
+        Value i = eval_expr(it, toks, n, idx), a = eval_expr(it, toks, n, idx);
+        long long idx1 = (long long)to_num(i);
+        char *aw = value_to_word(a);
+        size_t len = strlen(aw);
+        Value out = v_word("");
+        if (idx1 >= 1 && (size_t)idx1 <= len) {
+            char ch[2] = {aw[idx1 - 1], '\0'};
+            out = v_word(ch);
+        }
+        free(aw);
+        v_free(&i); v_free(&a);
+        return out;
+    }
+    if (!strcmp(t, "member")) {
+        Value a = eval_expr(it, toks, n, idx), b = eval_expr(it, toks, n, idx);
+        char *needle = value_to_word(a);
+        char *haystack = value_to_word(b);
+        char *at = strstr(haystack, needle);
+        Value out = at ? v_word(at) : v_word("");
+        free(needle); free(haystack);
+        v_free(&a); v_free(&b);
+        return out;
     }
     if (!strcmp(t, "thing")) {
         Value name = eval_expr(it, toks, n, idx);
@@ -365,6 +570,18 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             v_free(&v);
             continue;
         }
+        if (!strcmp(cmd, "type")) {
+            Value v = eval_expr(it, toks, n, idx);
+            type_value(v);
+            v_free(&v);
+            continue;
+        }
+        if (!strcmp(cmd, "show")) {
+            Value v = eval_expr(it, toks, n, idx);
+            print_value(v);
+            v_free(&v);
+            continue;
+        }
         if (!strcmp(cmd, "make")) {
             if (*idx >= n) { fprintf(stderr, "error: make requires name\n"); it->had_error = true; return false; }
             char *name_tok = toks[(*idx)++];
@@ -372,6 +589,22 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
             Value v = eval_expr(it, toks, n, idx);
             set_var(it->current_scope, name, v);
             v_free(&v);
+            continue;
+        }
+        if (!strcmp(cmd, "localmake")) {
+            if (*idx >= n) { fprintf(stderr, "error: localmake requires name\n"); it->had_error = true; return false; }
+            char *name_tok = toks[(*idx)++];
+            const char *name = name_tok[0] == '"' ? name_tok + 1 : name_tok;
+            Value v = eval_expr(it, toks, n, idx);
+            set_local_var(it->current_scope, name, v);
+            v_free(&v);
+            continue;
+        }
+        if (!strcmp(cmd, "local")) {
+            if (*idx >= n) { fprintf(stderr, "error: local requires name\n"); it->had_error = true; return false; }
+            char *name_tok = toks[(*idx)++];
+            const char *name = name_tok[0] == '"' ? name_tok + 1 : name_tok;
+            set_local_var(it->current_scope, name, v_none());
             continue;
         }
         if (!strcmp(cmd, "repeat")) {
@@ -424,9 +657,15 @@ static bool exec_tokens(Interp *it, char **toks, int n, int *idx) {
         }
         if (!strcmp(cmd, "words")) {
             static const char *builtins[] = {
-                "print", "make", "repeat", "if", "ifelse", "output", "stop",
-                "words", "sum", "difference", "product", "quotient",
-                "lessp", "greaterp", "equalp", "thing"
+                "print", "type", "show", "make", "local", "localmake",
+                "repeat", "if", "ifelse", "output", "stop", "words",
+                "sum", "difference", "product", "quotient", "remainder",
+                "modulo", "power", "sqrt", "int", "round", "abs", "minus",
+                "random", "lessp", "greaterp", "equalp", "less?", "greater?",
+                "equal?", "notequalp", "notequal?", "and", "or", "not",
+                "numberp", "wordp", "listp", "emptyp", "memberp", "word",
+                "sentence", "se", "list", "first", "last", "butfirst", "bf",
+                "butlast", "bl", "item", "count", "member", "thing"
             };
             for (Proc *p = it->procs; p; p = p->next) printf("%s ", p->name);
             for (size_t wi = 0; wi < sizeof(builtins) / sizeof(*builtins); wi++) printf("%s ", builtins[wi]);
@@ -525,6 +764,7 @@ static void interp_init(Interp *it) {
     it->global_scope = scope_new(NULL);
     it->current_scope = it->global_scope;
     it->output = v_none();
+    srand(1);
 }
 
 static void interp_free(Interp *it) {
