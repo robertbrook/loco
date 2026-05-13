@@ -1,0 +1,15 @@
+#!/usr/bin/env ruby
+$LOAD_PATH.unshift File.join(__dir__, '..', 'lib')
+require 'loco'
+
+interp = Loco::Interpreter.new
+
+if ARGV.empty?
+  # REPL mode
+  interp.repl
+else
+  # File mode
+  ARGV.each do |file|
+    interp.load_file(file)
+  end
+end
