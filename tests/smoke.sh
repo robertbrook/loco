@@ -5,7 +5,7 @@ tmp_output="$(mktemp)"
 tmp_expected="$(mktemp)"
 trap 'rm -f "$tmp_output" "$tmp_expected"' EXIT
 
-cat <<'LOGO' | /home/runner/work/loco/loco/loco > "$tmp_output"
+cat <<'LOGO' | ./loco > "$tmp_output"
 make "x 10
 print :x
 repeat 3 [ print sum :x 1 ]

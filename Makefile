@@ -7,11 +7,11 @@ TARGET := loco
 
 all: $(TARGET)
 
-$(TARGET): /home/runner/work/loco/loco/loco.c
+$(TARGET): loco.c
 	$(CC) $(CFLAGS) $< -o $@
 
 test: $(TARGET)
-	sh /home/runner/work/loco/loco/tests/smoke.sh
+	sh tests/smoke.sh
 
 clean:
 	rm -f $(TARGET)

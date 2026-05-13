@@ -5,6 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#define MAX_LINE_LENGTH 8192
+
 typedef enum {
     VAL_NONE,
     VAL_NUM,
@@ -101,8 +103,8 @@ static double to_num(Value v) {
 
 static void print_value(Value v) {
     if (v.type == VAL_NUM) {
-        long long i = (long long)v.num;
-        if ((double)i == v.num) printf("%lld\n", i);
+        long long integer_part = (long long)v.num;
+        if ((double)integer_part == v.num) printf("%lld\n", integer_part);
         else printf("%g\n", v.num);
     } else if (v.type == VAL_WORD && v.word) {
         printf("%s\n", v.word);
@@ -121,11 +123,11 @@ static Scope *scope_new(Scope *parent) {
 static void scope_free(Scope *s) {
     Var *v = s->vars;
     while (v) {
-        Var *n = v->next;
+        Var *next_var = v->next;
         free(v->name);
         v_free(&v->value);
         free(v);
-        v = n;
+        v = next_var;
     }
     free(s);
 }
@@ -200,32 +202,34 @@ static int find_close_bracket(char **toks, int n, int open_idx) {
 }
 
 static void tokenize(const char *line, char ***out_toks, int *out_n) {
-    int cap = 16, n = 0;
+    int cap = 16, token_count = 0;
     char **toks = (char **)malloc((size_t)cap * sizeof(*toks));
     if (!toks) { fprintf(stderr, "out of memory\n"); exit(1); }
     for (const char *p = line; *p;) {
         while (*p && isspace((unsigned char)*p)) p++;
         if (!*p || *p == ';') break;
-        char buf[1024];
-        int k = 0;
+        const char *start = p;
+        size_t len = 0;
         if (*p == '[' || *p == ']') {
-            buf[k++] = *p++;
+            p++;
+            len = 1;
         } else {
-            while (*p && !isspace((unsigned char)*p) && *p != '[' && *p != ']' && *p != ';') {
-                if (k < (int)sizeof(buf) - 1) buf[k++] = *p;
-                p++;
-            }
+            while (*p && !isspace((unsigned char)*p) && *p != '[' && *p != ']' && *p != ';') p++;
+            len = (size_t)(p - start);
         }
-        buf[k] = '\0';
-        if (n == cap) {
+        char *tok = (char *)malloc(len + 1);
+        if (!tok) { fprintf(stderr, "out of memory\n"); exit(1); }
+        memcpy(tok, start, len);
+        tok[len] = '\0';
+        if (token_count == cap) {
             cap *= 2;
             toks = (char **)realloc(toks, (size_t)cap * sizeof(*toks));
             if (!toks) { fprintf(stderr, "out of memory\n"); exit(1); }
         }
-        toks[n++] = dupstr(buf);
+        toks[token_count++] = tok;
     }
     *out_toks = toks;
-    *out_n = n;
+    *out_n = token_count;
 }
 
 static void free_tokens(char **toks, int n) {
@@ -293,7 +297,15 @@ static Value eval_expr(Interp *it, char **toks, int n, int *idx) {
         if (!strcmp(t, "sum")) out = av + bv;
         if (!strcmp(t, "difference")) out = av - bv;
         if (!strcmp(t, "product")) out = av * bv;
-        if (!strcmp(t, "quotient")) out = (bv == 0) ? 0 : (av / bv);
+        if (!strcmp(t, "quotient")) {
+            if (bv == 0) {
+                fprintf(stderr, "error: division by zero\n");
+                it->had_error = true;
+                out = 0;
+            } else {
+                out = av / bv;
+            }
+        }
         v_free(&a); v_free(&b);
         return v_num(out);
     }
@@ -502,26 +514,33 @@ static void interp_init(Interp *it) {
 static void interp_free(Interp *it) {
     builder_reset(&it->builder);
     while (it->procs) {
-        Proc *n = it->procs->next;
+        Proc *next_proc = it->procs->next;
         free_proc(it->procs);
-        it->procs = n;
+        it->procs = next_proc;
     }
     while (it->current_scope != it->global_scope) {
-        Scope *n = it->current_scope->parent;
+        Scope *parent_scope = it->current_scope->parent;
         scope_free(it->current_scope);
-        it->current_scope = n;
+        it->current_scope = parent_scope;
     }
     if (it->global_scope) scope_free(it->global_scope);
     v_free(&it->output);
 }
 
 static void run_stream(Interp *it, FILE *f) {
-    char line[8192];
+    char line[MAX_LINE_LENGTH];
     bool interactive = (f == stdin) && isatty(STDIN_FILENO);
     while (1) {
         if (interactive) { fputs("> ", stdout); fflush(stdout); }
         if (!fgets(line, sizeof(line), f)) break;
         size_t len = strlen(line);
+        if (len > 0 && line[len - 1] != '\n' && !feof(f)) {
+            int c;
+            while ((c = fgetc(f)) != '\n' && c != EOF) {}
+            fprintf(stderr, "error: input line too long (max %d bytes)\n", MAX_LINE_LENGTH - 1);
+            it->had_error = true;
+            continue;
+        }
         while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = '\0';
         execute_line(it, line);
     }
